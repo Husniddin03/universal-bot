@@ -1,0 +1,54 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    container_name: kino-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./kino:/var/www/html
+    networks:
+      - laravel
+
+  mysql:
+    image: mysql:8.0
+    container_name: kino-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: kino_db
+      MYSQL_USER: kino_user
+      MYSQL_PASSWORD: kino_pass
+    ports:
+      - "3300:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - laravel
+
+  nginx:
+    image: nginx:latest
+    container_name: kino-nginx
+    restart: unless-stopped
+    ports:
+      - "8070:80"
+    volumes:
+      - ./kino:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - laravel
+
+volumes:
+  db_data:
+
+networks:
+  laravel:
+    driver: bridge
