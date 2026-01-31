@@ -11,28 +11,18 @@ return new class extends Migration
         Schema::create('movies', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
-            $table->string('code')->nullable()->unique(); // Unikal kod
-            $table->bigInteger('message_id')->nullable(); // Kanal message ID
-            $table->string('file_id')->nullable(); // Kanal message ID
-            $table->enum('status', ['waiting_video', 'waiting_name', 'waiting_code', 'ready'])
+            $table->string('code')->nullable()->unique();
+            $table->bigInteger('message_id')->nullable(); // kanal message_id
+            $table->enum('status', ['waiting_video', 'waiting_name', 'ready'])
                 ->default('waiting_video');
-
             $table->timestamps();
 
-            // Index qo'shish tez qidiruv uchun
             $table->index('code');
-        });
-
-        Schema::create('status', function (Blueprint $table) {
-            $table->id();
-            $table->boolean('is_active')->default(false);
-            $table->timestamps();
         });
     }
 
     public function down()
     {
         Schema::dropIfExists('movies');
-        Schema::dropIfExists('status');
     }
 };

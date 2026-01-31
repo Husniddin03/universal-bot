@@ -45,94 +45,104 @@ class TelegramBotController extends Controller
         }
 
 
+
+
         if ($chatId == $this->adminId) {
+
             $movie = Movie::latest()->first();
 
-            // 1. Video yuborildi
+            /* ======================
+                1. VIDEO YUBORILDI
+            ====================== */
             if ($message->has('video')) {
 
-                // Oldingi kino to‘liq emas
-                if ($movie && $movie->status != 'ready') {
+                if ($movie && $movie->status !== 'ready') {
                     return Telegram::sendMessage([
                         'chat_id' => $chatId,
-                        'text' => "⚠️ Avvalgi kino to‘liq emas!\nIltimos davom ettiring."
+                        'text' => "⚠️ Avvalgi kino tugallanmagan."
                     ]);
                 }
 
-                $fileId = $message->getVideo()->getFileId();
-
-                // Yangi kino yaratamiz
                 Movie::create([
-                    'file_id' => $fileId,
-                    'message_id' => $message->getMessageId(),
+                    'message_id' => $message->getMessageId(), // admin video ID
                     'status' => 'waiting_name'
                 ]);
 
                 return Telegram::sendMessage([
                     'chat_id' => $chatId,
-                    'text' => "🎬 Video qabul qilindi.\nEndi kino nomini yuboring."
+                    'text' => "🎬 Video qabul qilindi.\nKino nomini yuboring."
                 ]);
             }
 
-            // 2. Kino nomi kelyapti
-            if ($movie && $movie->status == 'waiting_name' && $text) {
 
-                $movie->update([
-                    'name' => $text,
-                    'status' => 'waiting_code'
-                ]);
+            /* ======================
+                2. KINO NOMI
+            ====================== */
+            if ($movie && $movie->status === 'waiting_name' && $text) {
 
-                return Telegram::sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => "✅ Nom saqlandi.\nEndi kino kodini yuboring."
-                ]);
-            }
+                // 🔢 AUTO KOD (100 dan)
+                $lastCode = Movie::whereNotNull('code')
+                    ->orderByRaw('CAST(code AS UNSIGNED) DESC')
+                    ->value('code');
 
-            // 3. Kino kodi kelyapti
-            if ($movie && $movie->status == 'waiting_code' && $text) {
+                $newCode = $lastCode ? ((int)$lastCode + 1) : 100;
 
-                $avelebl = Movie::where('code', $text)->first();
-
-                if ($avelebl) {
-                    return Telegram::sendMessage([
-                        'chat_id' => $chatId,
-                        'text' => "Bu kod ishlatilgan"
-                    ]);
-                }
-                // Kanalga post qilamiz
-                Telegram::copyMessage([
+                // 📢 1) Videoni kanalga copy qilamiz
+                $sent = Telegram::copyMessage([
                     'chat_id' => $this->channelId,
                     'from_chat_id' => $chatId,
-                    'message_id' => $movie->message_id,
+                    'message_id' => $movie->message_id, // admin video ID
                 ]);
 
+                // 📝 2) Captionni tahrirlaymiz (yuqoridan yoki pastdan)
+                $caption = "🎬 {$text}\n🆔 Kod: {$newCode}";
+
+                Telegram::editMessageCaption([
+                    'chat_id' => $this->channelId,
+                    'message_id' => $sent->getMessageId(),
+                    'caption' => $caption,
+                ]);
+
+                // 💾 3) DB yangilaymiz
                 $movie->update([
-                    'code' => $text,
+                    'name' => $text,
+                    'code' => $newCode,
+                    'message_id' => $sent->getMessageId(), // kanal message_id
                     'status' => 'ready'
                 ]);
 
                 return Telegram::sendMessage([
                     'chat_id' => $chatId,
-                    'text' => "✅ Kino kanalga joylandi!"
+                    'text' => "✅ Kino kanalga joylandi!\n🆔 Kod: {$newCode}"
                 ]);
             }
         }
 
 
         if (is_numeric($text)) {
-            $movie = Movie::where('code', $text)->first();
+
+            $movie = Movie::where('code', $text)
+                ->where('status', 'ready')
+                ->first();
+
             if ($movie) {
-                return Telegram::sendVideo([
+                Telegram::copyMessage([
                     'chat_id' => $chatId,
-                    'video' => $movie->file_id,
+                    'from_chat_id' => $this->channelId,
+                    'message_id' => $movie->message_id,
                 ]);
+
+                return response('ok');
             }
 
             return Telegram::sendMessage([
                 'chat_id' => $chatId,
-                'text' => 'Kino topilmadi'
+                'text' => '❌ Kino topilmadi'
             ]);
         }
+
+
+
         // if (!$this->isUrl($text)) {
         //     Telegram::sendMessage([
         //         'chat_id' => $chatId,
@@ -155,7 +165,7 @@ class TelegramBotController extends Controller
 
         Telegram::sendMessage([
             'chat_id' => $chatId,
-            'text' => $text
+            'text' => "keldi"
         ]);
 
         return response('ok', 200);
