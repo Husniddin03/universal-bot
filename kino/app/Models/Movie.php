@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Movie extends Model
 {
-    protected $fillable = ['name', 'code', 'message_id', 'status'];
+    protected $fillable = ['name', 'code', 'message_id', 'status', 'caption', 'file_id'];
 
     // Timestamp avtomatik qo'shiladi
     public $timestamps = true;

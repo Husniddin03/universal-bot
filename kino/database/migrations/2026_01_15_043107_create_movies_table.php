@@ -13,6 +13,8 @@ return new class extends Migration
             $table->string('name')->nullable();
             $table->string('code')->nullable()->unique();
             $table->bigInteger('message_id')->nullable(); // kanal message_id
+            $table->string('file_id')->nullable(); // admin chatdagi file_id
+            $table->text('caption')->nullable(); // admin comment
             $table->enum('status', ['waiting_video', 'waiting_name', 'ready'])
                 ->default('waiting_video');
             $table->timestamps();
