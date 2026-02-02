@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Movie;
+use Illuminate\Support\Facades\Log;
 use Telegram\Bot\FileUpload\InputFile;
 use Telegram\Bot\Laravel\Facades\Telegram;
 
@@ -171,20 +172,67 @@ class TelegramBotController extends Controller
                 'chat_id' => $chatId,
                 'text' => '❌ Kino topilmadi'
             ]);
-        } else if ($this->isUrl($text)) {
-            $path = trim(shell_exec(
-                "yt-dlp -f best " .
-                    "-o 'storage/app/videos/%(title)s.%(ext)s' " .
-                    "--print filename '$text'"
-            ));
+        } 
+        else if (filter_var($text, FILTER_VALIDATE_URL)) {
+            $escapedUrl = escapeshellarg($text);
+            $outputPath = storage_path('app/videos/video_' . time());
 
-            Telegram::sendVideo([
-                'chat_id' => $chatId,
-                'video' => InputFile::create($path),
-            ]);
+            // Container ichidagi to'liq yo'l
+            $ytdlpPath = '/usr/local/bin/yt-dlp';
 
-            unlink($path); // majburiy
-        } else {
+            // Avval yt-dlp mavjudligini tekshirish
+            if (!file_exists($ytdlpPath)) {
+                Log::error('yt-dlp topilmadi: ' . $ytdlpPath);
+                Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Server xatosi. Iltimos, keyinroq urinib ko\'ring.'
+                ]);
+                return response('error', 500);
+            }
+
+            $command = "{$ytdlpPath} " .
+                "-f 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' " .
+                "--merge-output-format mp4 " .
+                "-o {$outputPath}.mp4 " .
+                "{$escapedUrl} 2>&1";
+
+            Log::info('Command: ' . $command);
+
+            exec($command, $output, $returnCode);
+
+            Log::info('Output: ' . implode("\n", $output));
+            Log::info('Return code: ' . $returnCode);
+
+            $videoPath = $outputPath . '.mp4';
+
+            if (!file_exists($videoPath)) {
+                Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Video yuklab olinmadi.'
+                ]);
+                return response('error', 400);
+            }
+
+            try {
+                Telegram::sendVideo([
+                    'chat_id' => $chatId,
+                    'video' => InputFile::create($videoPath),
+                ]);
+            } finally {
+                if (file_exists($videoPath)) {
+                    unlink($videoPath);
+                }
+            }
+
+            return response('ok', 200);
+        }
+         else {
+            if (strlen($text) < 3) {
+                return Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => 'Kamida 3 ta belgi kiriting!'
+                ]);
+            }
             $movies = Movie::where('name', 'LIKE', "%{$text}%")
                 ->where('status', 'ready')
                 ->limit(10)
@@ -240,14 +288,5 @@ class TelegramBotController extends Controller
         }
 
         return response('ok', 200);
-    }
-
-    public function isUrl($url)
-    {
-        if (filter_var($url, FILTER_VALIDATE_URL)) {
-            return true;
-        } else {
-            return false;
-        }
     }
 }

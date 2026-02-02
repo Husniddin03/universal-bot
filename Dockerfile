@@ -22,6 +22,13 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 ARG UID=1000
 ARG GID=1000
 
+# yt-dlp o'rnatish
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp
+
+# ffmpeg o'rnatish (video merge qilish uchun kerak)
+RUN apt-get update && apt-get install -y ffmpeg
+
 # www-data foydalanuvchisini sizning UID/GID ga o'zgartirish
 RUN usermod -u $UID www-data && groupmod -g $GID www-data
 
