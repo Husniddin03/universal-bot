@@ -149,25 +149,25 @@ class TelegramBotController extends Controller
                 ->first();
 
             if ($movie) {
-                if ($movie) {
-                    try {
-                        Telegram::copyMessage([
-                            'chat_id' => $chatId,
-                            'from_chat_id' => $this->channelId,
-                            'message_id' => $movie->message_id,
-                        ]);
 
-                        return response('ok');
-                    } catch (\Telegram\Bot\Exceptions\TelegramResponseException $e) {
-                        // MESSAGE_ID_INVALID yoki boshqa xatolar
-                        return Telegram::sendMessage([
-                            'chat_id' => $chatId,
-                            'text' => '❌ Kino topilmadi'
-                        ]);
-                    }
+                try {
+                    // 2. copyMessage orqali yuboramiz va reply_markup qo'shamiz
+                    Telegram::copyMessage([
+                        'chat_id' => $chatId,
+                        'from_chat_id' => $this->channelId,
+                        'message_id' => $movie->message_id,
+                    ]);
+
+                    return response('ok');
+                } catch (\Exception $e) {
+                    return Telegram::sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => '❌ Kino yuborishda xatolik yuz berdi.'
+                    ]);
                 }
             }
 
+            // Kino topilmasa
             return Telegram::sendMessage([
                 'chat_id' => $chatId,
                 'text' => '❌ Kino topilmadi'
@@ -236,15 +236,12 @@ class TelegramBotController extends Controller
             $defaultText = "🎬 Bot ishga tushdi!\n\nKino nomi yoki kodini kiriting.";
 
             // /start
-            if ($text === '/start') {
+            if (str_contains($text, "/start")) {
                 return Telegram::sendMessage([
                     'chat_id' => $chatId,
                     'text' => $defaultText
                 ]);
-            }
-
-            // /help
-            if ($text === '/help') {
+            } elseif ($text === '/help') {
 
                 // Admin bo‘lsa
                 if (in_array($chatId, $this->adminId)) {
@@ -273,11 +270,22 @@ class TelegramBotController extends Controller
                 ]);
             }
 
+            $page = 1;
+            $message_id = null;
 
+            // Agar bu callback query (tugma bosilishi) bo'lsa
+            if (str_contains($text, "_page_")) {
+                $arr = explode('_', $text);
+                $text = $arr[0];      // Qidiruv so'zi
+                $page = (int)$arr[2]; // Sahifa raqami
+                // Callback query obyekti orqali xabar ID sini olamiz
+                $message_id = $message->getMessageId();
+            }
+
+            $perPage = 10;
             $movies = Movie::where('name', 'LIKE', "%{$text}%")
                 ->where('status', 'ready')
-                ->limit(10)
-                ->get();
+                ->paginate($perPage, ['*'], 'page', $page);
 
             if ($movies->isEmpty()) {
                 return Telegram::sendMessage([
@@ -287,43 +295,72 @@ class TelegramBotController extends Controller
             }
 
             $keyboard = [];
-            $index = 1;
-            $messageText = "🎬 <b>Topilgan kinolar:</b>\n\n";
+            $buttonsRow = [];
+            $index = ($movies->currentPage() - 1) * $perPage + 1;
+            $messageText = "🎬 <b>Topilgan kinolar (Sahifa: {$movies->currentPage()}):</b>\n\n";
 
             foreach ($movies as $movie) {
-
-                // Matn
                 $messageText .= "{$index}. Nomi: <b>{$movie->name}</b>\n";
                 $messageText .= "🆔 Kod: {$movie->code}\n\n";
 
-                // Tugma
                 $buttonsRow[] = [
                     'text' => (string)$index,
                     'callback_data' => $movie->code
                 ];
 
-                // Har 2 ta tugmadan keyin yangi qator
                 if (count($buttonsRow) === 5) {
                     $keyboard[] = $buttonsRow;
                     $buttonsRow = [];
                 }
-
                 $index++;
             }
 
-            // Agar oxirida 1 ta qolib ketsa
             if (!empty($buttonsRow)) {
                 $keyboard[] = $buttonsRow;
             }
 
-            Telegram::sendMessage([
+            // PAGINATION TUGMALARI
+            $paginationButtons = [];
+            if (!$movies->onFirstPage()) {
+                $paginationButtons[] = [
+                    'text' => '⬅️ Orqaga',
+                    'callback_data' => $text . "_page_" . ($page - 1)
+                ];
+            }
+
+            if ($movies->hasMorePages()) {
+                $paginationButtons[] = [
+                    'text' => 'Keyingi ➡️',
+                    'callback_data' => $text . "_page_" . ($page + 1)
+                ];
+            }
+
+            if (!empty($paginationButtons)) {
+                $keyboard[] = $paginationButtons;
+            }
+
+            $params = [
                 'chat_id' => $chatId,
                 'text' => $messageText,
                 'parse_mode' => 'HTML',
-                'reply_markup' => json_encode([
-                    'inline_keyboard' => $keyboard
-                ])
-            ]);
+                'reply_markup' => json_encode(['inline_keyboard' => $keyboard])
+            ];
+
+            // ASOSIY MANTIQ: Yangilash yoki Yangi yuborish
+            if ($message_id) {
+                // Agar message_id bo'lsa, mavjudini tahrirlaymiz
+                $params['message_id'] = $message_id;
+                try {
+                    Telegram::editMessageText($params);
+                } catch (\Exception $e) {
+                    // Xabar o'zgarmagan bo'lsa Telegram xato qaytaradi, shuni ushlab qolamiz
+                }
+            } else {
+                // Aks holda yangi yuboramiz
+                Telegram::sendMessage($params);
+            }
+
+
 
             return response('ok');
         }
