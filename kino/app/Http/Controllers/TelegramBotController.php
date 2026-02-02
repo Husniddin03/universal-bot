@@ -172,8 +172,7 @@ class TelegramBotController extends Controller
                 'chat_id' => $chatId,
                 'text' => '❌ Kino topilmadi'
             ]);
-        } 
-        else if (filter_var($text, FILTER_VALIDATE_URL)) {
+        } else if (filter_var($text, FILTER_VALIDATE_URL)) {
             $escapedUrl = escapeshellarg($text);
             $outputPath = storage_path('app/videos/video_' . time());
 
@@ -225,14 +224,56 @@ class TelegramBotController extends Controller
             }
 
             return response('ok', 200);
-        }
-         else {
+        } else {
             if (strlen($text) < 3) {
                 return Telegram::sendMessage([
                     'chat_id' => $chatId,
                     'text' => 'Kamida 3 ta belgi kiriting!'
                 ]);
             }
+
+            // Umumiy xabar
+            $defaultText = "🎬 Bot ishga tushdi!\n\nKino nomi yoki kodini kiriting.";
+
+            // /start
+            if ($text === '/start') {
+                return Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => $defaultText
+                ]);
+            }
+
+            // /help
+            if ($text === '/help') {
+
+                // Admin bo‘lsa
+                if (in_array($chatId, $this->adminId)) {
+                    return Telegram::sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => "🛠 Admin panel",
+                        'reply_markup' => json_encode([
+                            'inline_keyboard' => [
+                                [
+                                    [
+                                        'text' => '🧩 Mini App',
+                                        'web_app' => [
+                                            'url' => env('TELEGRAM_WEBHOOK_URL')
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ])
+                    ]);
+                }
+
+                // Oddiy user
+                return Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => $defaultText
+                ]);
+            }
+
+
             $movies = Movie::where('name', 'LIKE', "%{$text}%")
                 ->where('status', 'ready')
                 ->limit(10)
