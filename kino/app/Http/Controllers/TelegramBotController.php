@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Movie;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Telegram\Bot\FileUpload\InputFile;
 use Telegram\Bot\Laravel\Facades\Telegram;
@@ -38,7 +40,20 @@ class TelegramBotController extends Controller
             $text = $callbackQuery->getData();
         }
 
+        $user = User::where('chat_id', $chatId)->first();
 
+        if (!$user) {
+            $firstName = $message->getFrom()->getFirstName(); // Ismi
+            $lastName = $message->getFrom()->getLastName();   // Familiyasi (agar bo'lsa)
+            $username = $message->getFrom()->getUsername();
+            User::create([
+                'name' => $firstName . " " . $lastName,
+                'email' => 'telegram_' . $chatId . '@kino.bot',
+                'chat_id' => $chatId,
+                'username' => $username,
+                'password' => Hash::make($chatId)
+            ]);
+        }
 
 
         if (in_array($chatId, $this->adminId)) {
