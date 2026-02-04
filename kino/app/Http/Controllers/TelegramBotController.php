@@ -314,10 +314,10 @@ class TelegramBotController extends Controller
                                             'url' => env('TELEGRAM_WEBHOOK_URL')
                                         ]
                                     ],
-                                    [
-                                        'text' => 'Change Bot username',
-                                        'callback_data' => "change_username"
-                                    ]
+                                    // [
+                                    //     'text' => 'Change Bot username',
+                                    //     'callback_data' => "change_username"
+                                    // ]
                                 ]
                             ]
                         ])
