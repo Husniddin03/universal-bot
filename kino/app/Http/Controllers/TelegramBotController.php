@@ -46,7 +46,7 @@ class TelegramBotController extends Controller
             $firstName = $message->getFrom()->getFirstName(); // Ismi
             $lastName = $message->getFrom()->getLastName();   // Familiyasi (agar bo'lsa)
             $username = $message->getFrom()->getUsername();
-            User::create([
+            $user = User::create([
                 'name' => $firstName . " " . $lastName,
                 'email' => 'telegram_' . $chatId . '@kino.bot',
                 'chat_id' => $chatId,
@@ -188,55 +188,96 @@ class TelegramBotController extends Controller
                 'text' => '❌ Kino topilmadi'
             ]);
         } else if (filter_var($text, FILTER_VALIDATE_URL)) {
-            $escapedUrl = escapeshellarg($text);
-            $outputPath = storage_path('app/videos/video_' . time());
 
-            // Container ichidagi to'liq yo'l
-            $ytdlpPath = '/usr/local/bin/yt-dlp';
+            if (isTelegramLink($text)) {
 
-            // Avval yt-dlp mavjudligini tekshirish
-            if (!file_exists($ytdlpPath)) {
-                Log::error('yt-dlp topilmadi: ' . $ytdlpPath);
-                Telegram::sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => 'Server xatosi. Iltimos, keyinroq urinib ko\'ring.'
-                ]);
-                return response('error', 500);
-            }
-
-            $command = "{$ytdlpPath} " .
-                "-f 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' " .
-                "--merge-output-format mp4 " .
-                "-o {$outputPath}.mp4 " .
-                "{$escapedUrl} 2>&1";
-
-            Log::info('Command: ' . $command);
-
-            exec($command, $output, $returnCode);
-
-            Log::info('Output: ' . implode("\n", $output));
-            Log::info('Return code: ' . $returnCode);
-
-            $videoPath = $outputPath . '.mp4';
-
-            if (!file_exists($videoPath)) {
-                Telegram::sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => 'Video yuklab olinmadi.'
-                ]);
-                return response('error', 400);
-            }
-
-            try {
-                Telegram::sendVideo([
-                    'chat_id' => $chatId,
-                    'video' => InputFile::create($videoPath),
-                ]);
-            } finally {
-                if (file_exists($videoPath)) {
-                    unlink($videoPath);
+                // Invite link
+                if (isInviteLink($text)) {
+                    Telegram::sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => '🔗 Bu Telegram taklif linki qabul qilindi. Botga yozish huquqini bering, shunda bu xabarlarni saqlay oladi.'
+                    ]);
+                    $user->link = $text;
+                    $user->save();
+                    return response('ok', 200);
                 }
+
+                // Public kanal/guruh
+                if (isPublicTelegram($text)) {
+
+                    if (checkPublicChat($text)) {
+                        Telegram::sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => '✅ Haqiqiy Telegram kanal/guruh linki qabul qilindi. Botga yozish huquqini bering, shunda bu xabarlarni saqlay oladi.'
+                        ]);
+                        $user->link = $text;
+                        $user->save();
+                    } else {
+                        Telegram::sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => '❌ Bunday kanal/guruh topilmadi'
+                        ]);
+                    }
+
+                    return response('ok', 200);
+                }
+            } else {
+                Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => '❌ Telegramga tegishli emas'
+                ]);
             }
+
+
+            // $escapedUrl = escapeshellarg($text);
+            // $outputPath = storage_path('app/videos/video_' . time());
+
+            // // Container ichidagi to'liq yo'l
+            // $ytdlpPath = '/usr/local/bin/yt-dlp';
+
+            // // Avval yt-dlp mavjudligini tekshirish
+            // if (!file_exists($ytdlpPath)) {
+            //     Log::error('yt-dlp topilmadi: ' . $ytdlpPath);
+            //     Telegram::sendMessage([
+            //         'chat_id' => $chatId,
+            //         'text' => 'Server xatosi. Iltimos, keyinroq urinib ko\'ring.'
+            //     ]);
+            //     return response('error', 500);
+            // }
+
+            // $command = "{$ytdlpPath} " .
+            //     "-f 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' " .
+            //     "--merge-output-format mp4 " .
+            //     "-o {$outputPath}.mp4 " .
+            //     "{$escapedUrl} 2>&1";
+
+            // Log::info('Command: ' . $command);
+
+            // exec($command, $output, $returnCode);
+
+            // Log::info('Output: ' . implode("\n", $output));
+            // Log::info('Return code: ' . $returnCode);
+
+            // $videoPath = $outputPath . '.mp4';
+
+            // if (!file_exists($videoPath)) {
+            //     Telegram::sendMessage([
+            //         'chat_id' => $chatId,
+            //         'text' => 'Video yuklab olinmadi.'
+            //     ]);
+            //     return response('error', 400);
+            // }
+
+            // try {
+            //     Telegram::sendVideo([
+            //         'chat_id' => $chatId,
+            //         'video' => InputFile::create($videoPath),
+            //     ]);
+            // } finally {
+            //     if (file_exists($videoPath)) {
+            //         unlink($videoPath);
+            //     }
+            // }
 
             return response('ok', 200);
         } else {
@@ -271,6 +312,10 @@ class TelegramBotController extends Controller
                                         'web_app' => [
                                             'url' => env('TELEGRAM_WEBHOOK_URL')
                                         ]
+                                    ],
+                                    [
+                                        'text' => 'Change Bot username',
+                                        'callback_data' => "change_username"
                                     ]
                                 ]
                             ]
@@ -283,6 +328,22 @@ class TelegramBotController extends Controller
                     'chat_id' => $chatId,
                     'text' => $defaultText
                 ]);
+            } elseif ($text === '/merge') {
+
+                return Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "Botga guruh yoki kanalni biriktirib ijtimoiy tarmoqdan yuklab olgan videolaringizni automatik saqlashingiz mumkin. Buning uchun menga shunchki linkni yuboring!"
+                ]);
+            } elseif ($text === 'change_username') {
+                foreach (Movie::all() as $movie) {
+                    $caption = str_replace(env('TELEGRAM_BOT_URL'), env('TELEGRAM_BOT_CHANGE_URL'), $movie->caption);
+                    Telegram::editMessageCaption([
+                        'chat_id' => $this->channelId,
+                        'message_id' => $movie->message_id,
+                        'caption' => $caption,
+                        'parse_mode' => 'HTML',
+                    ]);
+                }
             }
 
             $page = 1;
@@ -303,6 +364,12 @@ class TelegramBotController extends Controller
                 ->paginate($perPage, ['*'], 'page', $page);
 
             if ($movies->isEmpty()) {
+                if ($text === 'change_username') {
+                    return Telegram::sendMessage([
+                        'chat_id' => $chatId,
+                        'text' => 'O\'zgartirildi'
+                    ]);
+                }
                 return Telegram::sendMessage([
                     'chat_id' => $chatId,
                     'text' => '❌ Kino topilmadi'
@@ -381,5 +448,34 @@ class TelegramBotController extends Controller
         }
 
         return response('ok', 200);
+    }
+}
+
+function isTelegramLink($text)
+{
+    return preg_match('/^https?:\/\/t\.me\/.+$/', $text);
+}
+
+function isInviteLink($text)
+{
+    return preg_match('/^https?:\/\/t\.me\/\+.+$/', $text);
+}
+function isPublicTelegram($text)
+{
+    return preg_match('/^https?:\/\/t\.me\/(?!\+)[a-zA-Z0-9_]+$/', $text);
+}
+
+function checkPublicChat($url)
+{
+    $username = basename(parse_url($url, PHP_URL_PATH));
+
+    try {
+        Telegram::getChat([
+            'chat_id' => '@' . $username
+        ]);
+
+        return true;
+    } catch (\Exception $e) {
+        return false;
     }
 }
