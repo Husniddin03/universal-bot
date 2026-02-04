@@ -6,6 +6,7 @@ use App\Models\Movie;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Telegram\Bot\Exceptions\TelegramResponseException;
 use Telegram\Bot\FileUpload\InputFile;
 use Telegram\Bot\Laravel\Facades\Telegram;
 
@@ -335,15 +336,42 @@ class TelegramBotController extends Controller
                     'text' => "Botga guruh yoki kanalni biriktirib ijtimoiy tarmoqdan yuklab olgan videolaringizni automatik saqlashingiz mumkin. Buning uchun menga shunchki linkni yuboring!"
                 ]);
             } elseif ($text === 'change_username') {
+
                 foreach (Movie::all() as $movie) {
-                    $caption = str_replace(env('TELEGRAM_BOT_URL'), env('TELEGRAM_BOT_CHANGE_URL'), $movie->caption);
-                    Telegram::editMessageCaption([
-                        'chat_id' => $this->channelId,
-                        'message_id' => $movie->message_id,
-                        'caption' => $caption,
-                        'parse_mode' => 'HTML',
-                    ]);
-                    sleep(2);
+                    $caption = str_replace(
+                        env('TELEGRAM_BOT_URL'),
+                        env('TELEGRAM_BOT_CHANGE_URL'),
+                        $movie->caption
+                    );
+
+                    try {
+                        Telegram::editMessageCaption([
+                            'chat_id' => $this->channelId,
+                            'message_id' => $movie->message_id,
+                            'caption' => $caption,
+                            'parse_mode' => 'HTML',
+                        ]);
+
+                        sleep(3); // minimal xavfsiz delay
+
+                    } catch (TelegramResponseException $e) {
+
+                        $response = $e->getResponse();
+                        $params = $response['parameters'] ?? [];
+
+                        if (isset($params['retry_after'])) {
+                            $wait = $params['retry_after'];
+                            sleep($wait);
+
+                            // qayta urinib ko‘ramiz
+                            Telegram::editMessageCaption([
+                                'chat_id' => $this->channelId,
+                                'message_id' => $movie->message_id,
+                                'caption' => $caption,
+                                'parse_mode' => 'HTML',
+                            ]);
+                        }
+                    }
                 }
             }
 
