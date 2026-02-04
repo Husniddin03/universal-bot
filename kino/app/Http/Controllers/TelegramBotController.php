@@ -343,6 +343,7 @@ class TelegramBotController extends Controller
                         'caption' => $caption,
                         'parse_mode' => 'HTML',
                     ]);
+                    sleep(2);
                 }
             }
 
