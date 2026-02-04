@@ -337,7 +337,7 @@ class TelegramBotController extends Controller
                 ]);
             } elseif ($text === 'change_username') {
 
-                foreach (Movie::latest()->get() as $movie) {
+                foreach (Movie::all() as $movie) {
                     $caption = str_replace(
                         env('TELEGRAM_BOT_URL'),
                         env('TELEGRAM_BOT_CHANGE_URL'),
